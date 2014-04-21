@@ -231,7 +231,6 @@ Available options are:
   and at the top of the page (in supported browsers).
   Otherwise, an exception will be raised in the Ruby code.
   Defaults to false in production mode, true otherwise.
-  Only has meaning within Rack, Ruby on Rails, or Merb.
 
 {#template_location-option} `:template_location`
 : A path to the root sass template directory for your application.
@@ -294,6 +293,16 @@ Available options are:
   with a constructor that takes a single string argument (the load path).
   Defaults to {Sass::Importers::Filesystem}.
 
+{#sourcemap-option} `:sourcemap`
+: When set to true, causes Sass to generate standard JSON [source maps][]
+  alongside its compiled CSS files. These source maps tell the browser how to
+  find the Sass styles that caused each CSS style to be generated. Sass assumes
+  that the source stylesheets will be made available on whatever server you're
+  using, and that their relative location will be the same as it is on the local
+  filesystem. If this isn't the case, you'll need to make a custom class that
+  extends \{Sass::Importers::Base} or \{Sass::Importers::Filesystem} and
+  overrides \{Sass::Importers::Base#public\_url `#public_url`}.
+
 {#line_numbers-option} `:line_numbers`
 : When set to true, causes the line number and file
   where a selector is defined to be emitted into the compiled CSS
@@ -326,6 +335,8 @@ Available options are:
 {#quiet-option} `:quiet`
 : When set to true, causes warnings to be disabled.
 
+[source maps]: https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?hl=en_US&pli=1&pli=1
+
 ### Syntax Selection
 
 The Sass command-line tool will use the file extension to determine which
@@ -337,45 +348,25 @@ like the `sass` program but it defaults to assuming the syntax is SCSS.
 
 ### Encodings
 
-When running on Ruby 1.9 and later, Sass is aware of the character encoding of documents.
-By default, Sass assumes that all stylesheets are encoded
-using whatever coding system your operating system defaults to.
-For many users this will be `UTF-8`, the de facto standard for the web.
-For some users, though, it may be a more local encoding.
+When running on Ruby 1.9 and later, Sass is aware of the character encoding of
+documents. Sass follows the [CSS spec][syntax level 3] to determine the encoding
+of a stylesheet, and falls back to the Ruby string encoding. This means that it
+first checks the Unicode byte order mark, then the `@charset` declaration, then
+the Ruby string encoding. If none of these are set, it will assume the document
+is in UTF-8.
 
-If you want to use a different encoding for your stylesheet
-than your operating system default,
-you can use the `@charset` declaration just like in CSS.
-Add `@charset "encoding-name";` at the beginning of the stylesheet
-(before any whitespace or comments)
-and Sass will interpret it as the given encoding.
-Note that whatever encoding you use, it must be convertible to Unicode.
+[syntax level 3]: http://www.w3.org/TR/2013/WD-css-syntax-3-20130919/#determine-the-fallback-encoding
 
-Sass will also respect any Unicode BOMs and non-ASCII-compatible Unicode encodings
-[as specified by the CSS spec](http://www.w3.org/TR/CSS2/syndata.html#charset),
-although this is *not* the recommended way
-to specify the character set for a document.
-Note that Sass does not support the obscure `UTF-32-2143`,
-`UTF-32-3412`, `EBCDIC`, `IBM1026`, and `GSM 03.38` encodings,
-since Ruby does not have support for them
-and they're highly unlikely to ever be used in practice.
+To explicitly specify the encoding of your stylesheet, use a `@charset`
+declaration just like in CSS. Add `@charset "encoding-name";` at the beginning
+of the stylesheet (before any whitespace or comments) and Sass will interpret it
+as the given encoding. Note that whatever encoding you use, it must be
+convertible to Unicode.
 
-#### Output Encoding
-
-In general, Sass will try to encode the output stylesheet
-using the same encoding as the input stylesheet.
-In order for it to do this, though, the input stylesheet must have a `@charset` declaration;
-otherwise, Sass will default to encoding the output stylesheet as `UTF-8`.
-In addition, it will add a `@charset` declaration to the output
-if it's not plain ASCII.
-
-When other stylesheets with `@charset` declarations are `@import`ed,
-Sass will convert them to the same encoding as the main stylesheet.
-
-Note that Ruby 1.8 does not have good support for character encodings,
-and so Sass behaves somewhat differently when running under it than under Ruby 1.9 and later.
-In Ruby 1.8, Sass simply uses the first `@charset` declaration in the stylesheet
-or any of the other stylesheets it `@import`s.
+Sass will always encode its output as UTF-8. It will include a `@charset`
+declaration if and only if the output file contains non-ASCII characters. In
+compressed mode, a UTF-8 byte order mark is used in place of a `@charset`
+declaration.
 
 ## CSS Extensions
 
@@ -430,7 +421,7 @@ is compiled to:
       #main pre {
         font-size: 3em; }
 
-### Referencing Parent Selectors: `&`
+### Referencing Parent Selectors: `&` {#parent-selector}
 
 Sometimes it's useful to use a nested rule's parent selector
 in other ways than the default.
@@ -480,6 +471,25 @@ is compiled to:
         font-weight: bold; }
         #main a:hover {
           color: red; }
+
+`&` must appear at the beginning of a compound selector, but it can be
+followed by a suffix that will be added to the parent selector. For
+example:
+
+    #main {
+      color: black;
+      &-sidebar { border: 1px solid; }
+    }
+
+is compiled to:
+
+    #main {
+      color: black; }
+      #main-sidebar {
+        border: 1px solid; }
+
+If the parent selector can't have a suffix applied, Sass will throw an
+error.
 
 ### Nested Properties
 
@@ -615,18 +625,29 @@ You can then refer to them in properties:
       width: $width;
     }
 
-Variables are only available within the level of nested selectors
-where they're defined.
-If they're defined outside of any nested selectors,
-they're available everywhere.
+Variables are only available within the level of nested selectors where they're
+defined. If they're defined outside of any nested selectors, they're available
+everywhere. They can also be defined with the `!global` flag, in which case
+they're also available everywhere. For example:
 
-Variables used to use the prefix character `!`;
-this still works, but it's deprecated and prints a warning.
-`$` is the recommended syntax.
+    #main {
+      $width: 5em !global;
+      width: $width;
+    }
 
-Variables also used to be defined with `=` rather than `:`;
-this still works, but it's deprecated and prints a warning.
-`:` is the recommended syntax.
+    #sidebar {
+      width: $width;
+    }
+
+is compiled to:
+
+    #main {
+      width: 5em;
+    }
+
+    #sidebar {
+      width: 5em;
+    }
 
 ### Data Types
 
@@ -638,6 +659,7 @@ SassScript supports six main data types:
 * booleans (e.g. `true`, `false`)
 * nulls (e.g. `null`)
 * lists of values, separated by spaces or commas (e.g. `1.5em 1em 0 2em`, `Helvetica, Arial, sans-serif`)
+* maps from one value to another (e.g. `(key1: value1, key2: value2)`)
 
 SassScript also supports all other types of CSS property value,
 such as Unicode ranges and `!important` declarations.
@@ -672,10 +694,6 @@ is compiled to:
     body.firefox .header:before {
       content: "Hi, Firefox users!"; }
 
-It's also worth noting that when using the [deprecated `=` property syntax](#sassscript),
-all strings are interpreted as unquoted,
-regardless of whether or not they're written with quotes.
-
 #### Lists
 
 Lists are how Sass represents the values of CSS declarations
@@ -684,12 +702,12 @@ Lists are just a series of other values, separated by either spaces or commas.
 In fact, individual values count as lists, too: they're just lists with one item.
 
 On their own, lists don't do much,
-but the [Sass list functions](Sass/Script/Functions.html#list-functions)
+but the [SassScript list functions](Sass/Script/Functions.html#list-functions)
 make them useful.
-The {Sass::Script::Functions#nth nth function} can access items in a list,
-the {Sass::Script::Functions#join join function} can join multiple lists together,
-and the {Sass::Script::Functions#append append function} can add items to lists.
-The [`@each` rule](#each-directive) can also add styles for each item in a list.
+The {Sass::Script::Functions#nth `nth` function} can access items in a list,
+the {Sass::Script::Functions#join `join` function} can join multiple lists together,
+and the {Sass::Script::Functions#append `append` function} can add items to lists.
+The [`@each` directive](#each-directive) can also add styles for each item in a list.
 
 In addition to containing simple values, lists can contain other lists.
 For example, `1px 2px, 5px 6px` is a two-item list
@@ -710,14 +728,49 @@ However, they aren't the same when they're Sass:
 the first is a list containing two lists,
 while the second is a list containing four numbers.
 
-Lists can also have no items in them at all.
-These lists are represented as `()`.
-They can't be output directly to CSS;
-if you try to do e.g. `font-family: ()`, Sass will raise an error.
-If a list contains empty lists or null values,
-as in `1px 2px () 3px` or `1px 2px null 3px`,
-the empty lists and null values will be removed
-before the containing list is turned into CSS.
+Lists can also have no items in them at all. These lists are represented as `()`
+(which is also an empty [map](#maps)). They can't be output directly to CSS; if
+you try to do e.g. `font-family: ()`, Sass will raise an error. If a list
+contains empty lists or null values, as in `1px 2px () 3px` or `1px 2px null
+3px`, the empty lists and null values will be removed before the containing list
+is turned into CSS.
+
+Comma-separated lists may have a trailing comma. This is especially
+useful because it allows you to represent a single-element list. For
+example, `(1,)` is a list containing `1` and `(1 2 3,)` is a
+comma-separated list containing a space-separated list containing `1`,
+`2`, and `3`.
+
+#### Maps
+
+Maps represent an association between keys and values, where keys are used to
+look up values. They make it easy to collect values into named groups and access
+those groups dynamically. They have no direct parallel in CSS, although they're
+syntactically similar to media query expressions:
+
+    $map: (key1: value1, key2: value2, key3: value3);
+
+Unlike lists, maps must always be surrounded by parentheses and must always be
+comma-separated. Both the keys and values in maps can be any SassScript object.
+A map may only have one value associated with a given key (although that value
+may be a list). A given value may be associated with many keys, though.
+
+Like lists, maps are mostly manipulated using [SassScript
+functions](Sass/Script/Functions.html#map-functions). The
+{Sass::Script::Functions#map-get `map-get` function} looks up values in a map
+and the {Sass::Script::Functions#map-merge `map-merge` function} adds values to
+a map. The [`@each` directive](#each-multi-assign) can be used to add styles
+for each key/value pair in a map. The order of pairs in a map is always the
+same as when the map was created.
+
+Maps can also be used anywhere lists can. When used by a list function, a map is
+treated as a list of pairs. For example, `(key1: value1, key2: value2)` would be
+treated as the nested list `key1 value1, key2 value2` by list functions. Lists
+cannot be treated as maps, though, with the exception of the empty list. `()`
+represents both a map with no key/value pairs and a list with no elements.
+
+Maps cannot be converted to plain CSS. Using one as the value of a variable or
+an argument to a CSS function will cause an error.
 
 ### Operations
 
@@ -865,7 +918,7 @@ For example:
 is compiled to:
 
     p {
-      color: rgba(255, 0, 0, 0.9);
+      color: rgba(255, 0, 0, 0.8);
       background-color: rgba(255, 0, 0, 0.25); }
 
 IE filters require all colors include the alpha layer, and be in
@@ -970,13 +1023,13 @@ Instead, they're manipulated using the
 Parentheses can be used to affect the order of operations:
 
     p {
-      width: (1em + 2em) * 3;
+      width: 1em + (2em * 3);
     }
 
 is compiled to:
 
     p {
-      width: 9em; }
+      width: 7em; }
 
 ### Functions
 
@@ -1043,6 +1096,37 @@ is compiled to:
 
     p {
       font: 12px/30px; }
+
+### `&` in SassScript {#parent-script}
+
+Just like when it's used [in selectors](#parent-selector), `&` in SassScript
+refers to the current parent selector. It's a comma-separated list of
+space-separated lists. For example:
+
+    .foo.bar .baz.bang, .bip.qux {
+      $selector: &;
+    }
+
+The value of `$selector` is now `((".foo.bar" ".baz.bang"), ".bip.qux")`. The
+compound selectors are quoted here to indicate that they're strings, but in
+reality they would be unquoted. Even if the parent selector doesn't contain a
+comma or a space, `&` will always have two levels of nesting, so it can be
+accessed consistently.
+
+If there is no parent selector, the value of `&` will be null. This means you
+can use it in a mixin to detect whether a parent selector exists:
+
+    @mixin does-parent-exist {
+      @if & {
+        &:hover {
+          color: red;
+        }
+      } else {
+        a {
+          color: red;
+        }
+      }
+    }
 
 ### Variable Defaults: `!default`
 
@@ -1695,6 +1779,73 @@ But this is an error:
 Someday we hope to have `@extend` supported natively in the browser, which will
 allow it to be used within `@media` and other directives.
 
+### `@at-root` {#at-root}
+
+The `@at-root` directive causes one or more rules to be emitted at the root of
+the document, rather than being nested beneath their parent selectors. It can
+either be used with a single inline selector:
+
+    .parent {
+      @at-root .child { ... }
+    }
+
+or with a block containing multiple selectors:
+
+    .parent {
+      @at-root {
+        .child1 { ... }
+        .child2 { ... }
+      }
+    }
+
+These produce, respectively:
+
+    .child { ... }
+
+    .child1 { ... }
+    .child2 { ... }
+
+#### `@at-root (without: ...)` and `@at-root (with: ...)`
+
+By default, `@at-root` just excludes selectors. However, it's also possible to
+use `@at-root` to move outside of nested directives such as `@media` as well.
+For example:
+
+    @media print {
+      .page {
+        width: 8in;
+        @at-root (without: media) {
+          color: red;
+        }
+      }
+    }
+
+produces:
+
+    @media print {
+      .page {
+        width: 8in;
+      }
+    }
+    .page {
+      color: red;
+    }
+
+You can use `@at-root (without: ...)` to move outside of any
+directive. You can also do it with multiple directives separated by a
+space: `@at-root (without: media supports)` moves outside of both
+`@media` and `@supports` queries.
+
+There are two special values you can pass to `@at-root`. "rule" refers
+to normal CSS rules; `@at-root (without: rule)` is the same as
+`@at-root` with no query. `@at-root (without: all)` means that the
+styles should be moved outside of *all* directives and CSS rules.
+
+If you want to specify which directives or rules to include, rather
+than listing which ones should be excluded, you can use `with` instead
+of `without`. For example, `@at-root (with: rule)` will move outside
+of all directives, but will preserve any CSS rules.
+
 ### `@debug`
 
 The `@debug` directive prints the value of a SassScript expression
@@ -1736,17 +1887,26 @@ Usage Example:
       position: relative; left: $x; top: $y;
     }
 
-## Control Directives
+## Control Directives & Expressions
 
 SassScript supports basic control directives
-for including styles only under some conditions
+and expressions for including styles only under some conditions
 or including the same style several times with variations.
 
-**Note that control directives are an advanced feature,
-and are not recommended in the course of day-to-day styling**.
-They exist mainly for use in [mixins](#mixins),
-particularly those that are part of libraries like [Compass](http://compass-style.org),
-and so require substantial flexibility.
+**Note:** Control directives are an advanced feature, and are uncommon
+ in day-to-day styling.  They exist mainly for use in [mixins](#mixins),
+particularly those that are part of libraries like
+[Compass](http://compass-style.org), and so require substantial
+flexibility.
+
+### `if()`
+
+The builtin `if()` function allows you to branch on a condition and
+returns only one of two possible outcomes. It can be used in any script
+context. The `if` function only evaluates the argument corresponding to
+the one that it will return -- this allows you to refer to variables
+that may not be defined or to have calculations that would otherwise
+cause an error (E.g. divide by zero).
 
 ### `@if`
 
@@ -1797,7 +1957,8 @@ counter variable is used to adjust the output. The directive has two forms:
 `@for $var from <start> through <end>` and `@for $var from <start> to <end>`.
 Note the difference in the keywords `through` and `to`. `$var` can be any
 variable name, like `$i`; `<start>` and `<end>` are SassScript expressions that
-should return integers.
+should return integers. When `<start>` is greater than `<end>` the counter will
+decrement instead of increment.
 
 The `@for` statement sets `$var` to each successive number in the specified
 range and each time outputs the nested styles using that value of `$var`. For
@@ -1820,11 +1981,11 @@ is compiled to:
 
 ### `@each` {#each-directive}
 
-The `@each` rule has the form `@each $var in <list>`.
-`$var` can be any variable name, like `$length` or `$name`,
-and `<list>` is a SassScript expression that returns a list.
+The `@each` directive usually has the form `@each $var in <list or map>`. `$var`
+can be any variable name, like `$length` or `$name`, and `<list or map>` is a
+SassScript expression that returns a list or a map.
 
-The `@each` rule sets `$var` to each item in the list,
+The `@each` rule sets `$var` to each item in the list or map,
 then outputs the styles it contains using that value of `$var`.
 For example:
 
@@ -1844,6 +2005,55 @@ is compiled to:
       background-image: url('/images/egret.png'); }
     .salamander-icon {
       background-image: url('/images/salamander.png'); }
+
+#### Multiple Assignment {#each-multi-assign}
+
+The `@each` directive can also use multiple variables, as in `@each $var1,
+$var2, ... in <list>`. If `<list>` is a list of lists, each element of the
+sub-lists is assigned to the respective variable. For example:
+
+    @each $animal, $color, $cursor in (puma, black, default),
+                                      (sea-slug, blue, pointer),
+                                      (egret, white, move) {
+      .#{$animal}-icon {
+        background-image: url('/images/#{$animal}.png');
+        border: 2px solid $color;
+        cursor: $cursor;
+      }
+    }
+
+is compiled to:
+
+    .puma-icon {
+      background-image: url('/images/puma.png');
+      border: 2px solid black;
+      cursor: default; }
+    .sea-slug-icon {
+      background-image: url('/images/sea-slug.png');
+      border: 2px solid blue;
+      cursor: pointer; }
+    .egret-icon {
+      background-image: url('/images/egret.png');
+      border: 2px solid white;
+      cursor: move; }
+
+Since [maps](#maps) are treated as lists of pairs, multiple assignment works
+with them as well. For example:
+
+    @each $header, $size in (h1: 2em, h2: 1.5em, h3: 1.2em) {
+      #{$header} {
+        font-size: $size;
+      }
+    }
+
+is compiled to:
+
+    h1 {
+      font-size: 2em; }
+    h2 {
+      font-size: 1.5em; }
+    h3 {
+      font-size: 1.2em; }
 
 ### `@while`
 
@@ -1975,8 +2185,8 @@ For example:
     @mixin highlighted-background { background-color: #fc0; }
     @mixin header-text { font-size: 20px; }
 
-A mixin may not include itself, directly or indirectly. That is,
-mixin recursion is forbidden.
+Mixins may include themselves. This is different than the behavior of
+Sass versions prior to 3.3, where mixin recursion was forbidden.
 
 Mixins that only define descendent selectors can be safely mixed
 into the top most level of a document.
@@ -2057,12 +2267,13 @@ Since the named arguments are variable names, underscores and dashes can be used
 
 #### Variable Arguments
 
-Sometimes it makes sense for a mixin to take an unknown number of arguments. For
-example, a mixin for creating box shadows might take any number of shadows as
-arguments. For these situations, Sass supports "variable arguments," which are
-arguments at the end of a mixin declaration that take all leftover arguments and
-package them up as a [list](#lists). These arguments look just like normal
-arguments, but are followed by `...`. For example:
+Sometimes it makes sense for a mixin or function to take an unknown number of
+arguments. For example, a mixin for creating box shadows might take any number
+of shadows as arguments. For these situations, Sass supports "variable
+arguments," which are arguments at the end of a mixin or function declaration
+that take all leftover arguments and package them up as a [list](#lists). These
+arguments look just like normal arguments, but are followed by `...`. For
+example:
 
     @mixin box-shadow($shadows...) {
       -moz-box-shadow: $shadows;
@@ -2082,8 +2293,14 @@ is compiled to:
       box-shadow: 0px 4px 5px #666, 2px 6px 10px #999;
     }
 
+Variable arguments also contain any keyword arguments passed to the mixin or
+function. These can be accessed using the {Sass::Script::Functions#keywords
+`keywords($args)` function}, which returns them as a map from strings (without
+`$`) to values.
+
 Variable arguments can also be used when calling a mixin. Using the same syntax,
 you can expand a list of values so that each value is passed as a separate
+argument, or expand a map of values so that each pair is treated as a keyword
 argument. For example:
 
     @mixin colors($text, $background, $border) {
@@ -2097,6 +2314,11 @@ argument. For example:
       @include colors($values...);
     }
 
+    $value-map: (text: #00ff00, background: #0000ff, border: #ff0000);
+    .secondary {
+      @include colors($value-map...);
+    }
+
 is compiled to:
 
     .primary {
@@ -2105,9 +2327,18 @@ is compiled to:
       border-color: #0000ff;
     }
 
+    .secondary {
+      color: #0000ff;
+      background-color: #ff0000;
+      border-color: #00ff00;
+    }
+
+You can pass both an argument list and a map as long as the list comes before
+the map, as in `@include colors($values..., $map...)`.
+
 You can use variable arguments to wrap a mixin and add additional styles without
-changing the argument signature of the mixin. If you do so, even keyword
-arguments will get passed through to the wrapped mixin. For example:
+changing the argument signature of the mixin. If you do, keyword arguments will
+get directly passed through to the wrapped mixin. For example:
 
     @mixin wrapped-stylish-mixin($args...) {
       font-weight: bold;

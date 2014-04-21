@@ -22,7 +22,7 @@ module Sass
           out << escape_char(value.slice!(0...1))
         end
         out << value.gsub(/[^a-zA-Z0-9_-]/) {|c| escape_char c}
-        return out
+        out
       end
 
       # Escapes a single character for a CSS identifier.
@@ -32,7 +32,7 @@ module Sass
       # @private
       def self.escape_char(c)
         return "\\%06x" % Sass::Util.ord(c) unless c =~ /[ -\/:-~]/
-        return "\\#{c}"
+        "\\#{c}"
       end
 
       # Creates a Regexp from a plain text string,
@@ -65,7 +65,7 @@ module Sass
 
       IDENT    = /-?#{NMSTART}#{NMCHAR}*/
       NAME     = /#{NMCHAR}+/
-      NUM      = /[0-9]+|[0-9]*\.[0-9]+/
+      NUM      = //
       STRING   = /#{STRING1}|#{STRING2}/
       URLCHAR  = /[#%&*-~]|#{NONASCII}|#{ESCAPE}/
       URL      = /(#{URLCHAR}*)/
@@ -80,8 +80,8 @@ module Sass
 
       S = /[ \t\r\n\f]+/
 
-      COMMENT = /\/\*[^*]*\*+(?:[^\/][^*]*\*+)*\//
-      SINGLE_LINE_COMMENT = /\/\/.*(\n[ \t]*\/\/.*)*/
+      COMMENT = %r{/\*[^*]*\*+(?:[^/][^*]*\*+)*/}
+      SINGLE_LINE_COMMENT = %r{//.*(\n[ \t]*//.*)*}
 
       CDO            = quote("<!--")
       CDC            = quote("-->")
@@ -94,9 +94,8 @@ module Sass
       HASH = /##{NAME}/
 
       IMPORTANT = /!#{W}important/i
-      DEFAULT = /!#{W}default/i
 
-      NUMBER = /#{NUM}(?:#{IDENT}|%)?/
+      NUMBER = /(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?\d+)?(?:#{IDENT}|%)?/
 
       URI = /url\(#{W}(?:#{STRING}|#{URL})#{W}\)/i
       FUNCTION = /#{IDENT}\(/
@@ -119,6 +118,12 @@ module Sass
       INTERP_START = /#\{/
       ANY = /:(-[-\w]+-)?any\(/i
       OPTIONAL = /!#{W}optional/i
+      IDENT_START = /-|#{NMSTART}/
+
+      # A unit is like an IDENT, but disallows a hyphen followed by a digit.
+      # This allows "1px-2px" to be interpreted as subtraction rather than "1"
+      # with the unit "px-2px". It also allows "%".
+      UNIT = /-?#{NMSTART}(?:[a-zA-Z0-9_]|#{NONASCII}|#{ESCAPE}|-(?!\d))*|%/
 
       IDENT_HYPHEN_INTERP = /-(#\{)/
       STRING1_NOINTERP = /\"((?:[^\n\r\f\\"#]|#(?!\{)|\\#{NL}|#{ESCAPE})*)\"/
@@ -127,7 +132,7 @@ module Sass
 
       STATIC_COMPONENT = /#{IDENT}|#{STRING_NOINTERP}|#{HEXCOLOR}|[+-]?#{NUMBER}|\!important/i
       STATIC_VALUE = /#{STATIC_COMPONENT}(\s*[\s,\/]\s*#{STATIC_COMPONENT})*([;}])/i
-      STATIC_SELECTOR = /(#{NMCHAR}|[ \t]|[,>+*]|[:#.]#{NMSTART}){0,50}([{])/i
+      STATIC_SELECTOR = /(#{NMCHAR}|[ \t]|[,>+*]|[:#.]#{NMSTART}){1,50}([{])/i
     end
   end
 end

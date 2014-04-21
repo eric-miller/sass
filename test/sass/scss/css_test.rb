@@ -94,7 +94,7 @@ foo {a /*: b; c */: d}
 SCSS
   end
 
-  def test_crazy_comments 
+  def test_crazy_comments
     # http://www.w3.org/Style/CSS/Test/CSS2.1/current/xhtml1/t040109-c17-comments-00-b.xht
     assert_equal <<CSS, render(<<SCSS)
 /* This is a CSS comment. */
@@ -573,7 +573,6 @@ SCSS
     assert_parses <<SCSS
 @foo bar {
   a: b; }
-
 @bar baz {
   c: d; }
 SCSS
@@ -593,7 +592,6 @@ SCSS
     assert_equal <<CSS, render(<<SCSS)
 @foo {
   a: b; }
-
 @bar {
   a: b; }
 CSS
@@ -658,7 +656,7 @@ SCSS
   ## Selectors
 
   # Taken from http://dev.w3.org/csswg/selectors4/#overview
-  def test_summarized_selectors
+  def test_summarized_selectors_with_element
     assert_selector_parses('*')
     assert_selector_parses('E')
     assert_selector_parses('E:not(s)')
@@ -727,7 +725,6 @@ SCSS
     assert_selector_parses('E! > F')
 
     assert_selector_parses('E /ns|foo/ F')
-    assert_selector_parses('E /*|foo/ F')
   end
 
   # Taken from http://dev.w3.org/csswg/selectors4/#overview, but without element
@@ -838,7 +835,7 @@ SCSS
 
   def assert_selector_can_contain_selectors(sel)
     try = lambda {|subsel| assert_selector_parses(sel.gsub('<sel>', subsel))}
-    
+
     try['foo|bar']
     try['*|bar']
 
@@ -890,11 +887,11 @@ SCSS
   end
 
   def test_expression_fallback_selectors
-    assert_selector_parses('0%')
-    assert_selector_parses('60%')
-    assert_selector_parses('100%')
-    assert_selector_parses('12px')
-    assert_selector_parses('"foo"')
+    assert_directive_parses('0%')
+    assert_directive_parses('60%')
+    assert_directive_parses('100%')
+    assert_directive_parses('12px')
+    assert_directive_parses('"foo"')
   end
 
   def test_functional_pseudo_selectors
@@ -1092,8 +1089,15 @@ SCSS
 SCSS
   end
 
+  def assert_directive_parses(param)
+    assert_parses <<SCSS
+@keyframes #{param} {
+  a: b; }
+SCSS
+  end
+
   def render(scss, options = {})
-    tree = Sass::SCSS::CssParser.new(scss, options[:filename]).parse
+    tree = Sass::SCSS::CssParser.new(scss, options[:filename], nil).parse
     tree.options = Sass::Engine::DEFAULT_OPTIONS.merge(options)
     tree.render
   end

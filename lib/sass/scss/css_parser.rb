@@ -25,8 +25,35 @@ module Sass
         end
       end
 
-      def nested_properties!(node, space)
-        expected('expression (e.g. 1px, bold)');
+      def nested_properties!(node)
+        expected('expression (e.g. 1px, bold)')
+      end
+
+      def ruleset
+        start_pos = source_position
+        rules, source_range = selector_sequence
+        return unless rules
+        block(node(Sass::Tree::RuleNode.new([rules], source_range), start_pos), :ruleset)
+      end
+
+      def selector_sequence
+        start_pos = source_position
+        if (sel = tok(STATIC_SELECTOR, true))
+          return sel, range(start_pos)
+        end
+
+        sel = selector_string
+        return unless sel
+
+        ws = ''
+        while tok(/,/)
+          ws << str {ss}
+          if (v = selector_string)
+            sel << ',' << ws << v
+            ws = ''
+          end
+        end
+        return sel, range(start_pos)
       end
 
       @sass_script_parser = Class.new(Sass::Script::CssParser)

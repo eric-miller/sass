@@ -3,8 +3,8 @@ module Sass
     # The abstract parent class of the various selector sequence classes.
     #
     # All subclasses should implement a `members` method that returns an array
-    # of object that respond to `#line=` and `#filename=`, as well as a `to_a`
-    # method that returns an array of strings and script nodes.
+    # of object that respond to `#line=` and `#filename=`, as well as a `to_s`
+    # method that returns the string representation of the selector.
     class AbstractSequence
       # The line of the Sass template on which this selector was declared.
       #
@@ -55,7 +55,7 @@ module Sass
       # @param other [Object] The object to test equality against
       # @return [Boolean] Whether or not this is equal to `other`
       def eql?(other)
-        other.class == self.class && other.hash == self.hash && _eql?(other)
+        other.class == self.class && other.hash == hash && _eql?(other)
       end
       alias_method :==, :eql?
 
@@ -66,12 +66,11 @@ module Sass
           members.any? {|m| m.is_a?(AbstractSequence) ? m.has_placeholder? : m.is_a?(Placeholder)}
       end
 
-      # Converts the selector into a string. This is the standard selector
-      # string, along with any SassScript interpolation that may exist.
+      # Returns the selector string.
       #
       # @return [String]
       def to_s
-        to_a.map {|e| e.is_a?(Sass::Script::Node) ? "\#{#{e.to_sass}}" : e}.join
+        Sass::Util.abstract(self)
       end
 
       # Returns the specificity of the selector as an integer. The base is given
